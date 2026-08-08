@@ -39,8 +39,7 @@ export async function login(email: string, password: string): Promise<Usuario> {
 }
 
 export async function logout() {
-  setToken(null);
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  await signOut(auth);
 }
 
 /** Restaura el JWT guardado y valida que siga vigente contra el servidor. */
