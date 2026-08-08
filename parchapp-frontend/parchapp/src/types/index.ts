@@ -11,7 +11,7 @@ export interface Parchadero {
     lat: number;
     lng: number;
   };
-  fotos: string[];          // URLs de Firebase Storage
+  fotos: string[];          // URLs públicas de MinIO
   calificacionPromedio: number;
   totalCalificaciones: number;
   creadoPor: string;        // uid del usuario

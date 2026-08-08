@@ -1,49 +1,67 @@
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-} from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { authApi, setToken } from './api';
 import { Usuario } from '../types';
 
-function mapUsuario(u: { uid: string; displayName: string | null; email: string | null; photoURL: string | null }): Usuario {
+declare const require: (moduleName: string) => unknown;
+const AsyncStorage = require('@react-native-async-storage/async-storage') as {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+};
+
+const TOKEN_KEY = '@parchapp:token';
+
+function mapUsuario(u: any): Usuario {
   return {
-    uid: u.uid,
-    nombre: u.displayName || 'Parcero',
-    email: u.email || '',
-    fotoPerfil: u.photoURL || undefined,
+    uid: u.id,
+    nombre: u.nombre || 'Parcero',
+    email: u.email,
+    fotoPerfil: u.foto_perfil || undefined,
     parchaderosFavoritos: [],
     parchaderosCreadosPor: [],
-    puntos: 0,
+    puntos: u.puntos || 0,
   };
 }
 
 export async function registrar(
   nombre: string, email: string, password: string
 ): Promise<Usuario> {
-  const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-  await updateProfile(credential.user, { displayName: nombre.trim() });
-  return mapUsuario(credential.user);
+  const { token, usuario } = await authApi.registro(nombre.trim(), email.trim(), password);
+  setToken(token);
+  await AsyncStorage.setItem(TOKEN_KEY, token);
+  return mapUsuario(usuario);
 }
 
 export async function login(email: string, password: string): Promise<Usuario> {
-  const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-  return mapUsuario(credential.user);
+  const { token, usuario } = await authApi.login(email.trim(), password);
+  setToken(token);
+  await AsyncStorage.setItem(TOKEN_KEY, token);
+  return mapUsuario(usuario);
 }
 
 export async function logout() {
   await signOut(auth);
 }
 
-/** Mantiene la sesión sincronizada y notifica cuando Firebase termina de restaurarla. */
+/** Restaura el JWT guardado y valida que siga vigente contra el servidor. */
 export function escucharSesion(
   onSession: (usuario: Usuario) => void,
   onSignedOut: () => void
 ) {
-  return onAuthStateChanged(auth, (user) => {
-    if (user) onSession(mapUsuario(user));
-    else onSignedOut();
+  let activo = true;
+  void AsyncStorage.getItem(TOKEN_KEY).then(async (token) => {
+    if (!token) {
+      if (activo) onSignedOut();
+      return;
+    }
+    try {
+      setToken(token);
+      const usuario = await authApi.me();
+      if (activo) onSession(mapUsuario(usuario));
+    } catch {
+      setToken(null);
+      await AsyncStorage.removeItem(TOKEN_KEY);
+      if (activo) onSignedOut();
+    }
   });
+  return () => { activo = false; };
 }
