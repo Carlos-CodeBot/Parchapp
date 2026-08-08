@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "ParchApp",
+    "slug": "parchapp",
+    "version": "1.0.0",
+    "scheme": "parchapp",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#7F77DD"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "ParchApp necesita tu ubicación para mostrarte parchaderos cercanos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "ParchApp necesita acceso a tus fotos para que puedas subir imágenes de parchaderos."
+        }
+      ]
+    ],
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#7F77DD"
+      },
+      "package": "com.parchapp.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "TU_GOOGLE_MAPS_API_KEY_ANDROID"
+        }
+      }
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.parchapp.app",
+      "config": {
+        "googleMapsApiKey": "TU_GOOGLE_MAPS_API_KEY_IOS"
+      }
+    }
+  }
+}
