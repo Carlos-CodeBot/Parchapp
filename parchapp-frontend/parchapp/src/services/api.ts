@@ -1,7 +1,7 @@
 // src/services/api.ts
 // Cliente HTTP/WS para la API autohospedada de ParchApp.
 
-export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000')
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost')
   .replace(/\/$/, '');
 
 let _token: string | null = null;
