@@ -23,8 +23,8 @@ export async function alertaRoutes(app: FastifyInstance) {
 
   // ─── WebSocket /ws/alertas ─────────────────────────────────────────
   // El cliente se conecta aquí y recibe todas las actualizaciones en tiempo real
-  app.get('/ws/alertas', { websocket: true }, async (connection) => {
-    const ws = connection.socket;
+  app.get('/ws/alertas', { websocket: true }, async (ws) => {
+
     clientes.add(ws);
 
     // Al conectar, envía todas las alertas activas
