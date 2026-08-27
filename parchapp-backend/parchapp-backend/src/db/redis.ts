@@ -59,8 +59,8 @@ export async function confirmarAlerta(id: string): Promise<AlertaRedis | null> {
   );
 
   // Extiende 5 minutos más en Redis también
-  await redis.expire(key, DURACION_ALERTA_SEG + 5 * 60);
-  await redis.set(key, JSON.stringify(alerta));
+  const ttlActual = await redis.ttl(key);
+  await redis.setex(key, Math.max(ttlActual, 0) + 5 * 60, JSON.stringify(alerta));
   return alerta;
 }
 

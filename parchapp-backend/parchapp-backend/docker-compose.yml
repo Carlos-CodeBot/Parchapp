@@ -7,8 +7,8 @@ services:
     build: .
     container_name: parchapp_api
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       - NODE_ENV=production
     env_file:
@@ -25,7 +25,7 @@ services:
 
   # ─── PostgreSQL ────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.4-alpine
     container_name: parchapp_postgres
     restart: unless-stopped
     environment:
@@ -71,24 +71,23 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9002:9000"   # API
+      - "9000:9000"   # API
       - "9001:9001"   # Consola web (para administrar archivos visualmente)
     networks:
       - parchapp_net
 
-  # ─── Nginx (proxy inverso, SSL, archivos estáticos) ────────
+  # ─── Nginx (proxy inverso, rate limiting y media) ────────
   nginx:
     image: nginx:alpine
     container_name: parchapp_nginx
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./docker/certs:/etc/nginx/certs:ro   # Tus certificados SSL aquí
     depends_on:
       - api
+      - minio
     networks:
       - parchapp_net
 

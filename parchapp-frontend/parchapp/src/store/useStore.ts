@@ -4,7 +4,7 @@ import { Parchadero, Alerta, Usuario } from '../types';
 
 interface AppState {
   // Auth
-  usuario: Usuario | null;
+  usuario: Usuario | null | undefined;
   setUsuario: (u: Usuario | null) => void;
 
   // Parchaderos
@@ -33,7 +33,8 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  usuario: null,
+  // `undefined` significa que la sesión aún se está restaurando.
+  usuario: undefined,
   setUsuario: (usuario) => set({ usuario }),
 
   parchaderos: [],
