@@ -4,6 +4,7 @@
 //   WS    → recibir actualizaciones en tiempo real desde Redis Pub/Sub
 
 import { FastifyInstance } from 'fastify';
+import type { WebSocket } from '@fastify/websocket';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -15,20 +16,14 @@ import { requireAuth } from '../middleware/auth';
 
 const TIPOS_ALERTA = ['policia','bloqueo','rumba','peligro','ruido','parche','lluvia','cerrado'] as const;
 
-// Clientes WebSocket conectados
-interface SocketCliente {
-  readyState: number;
-  send(message: string): void;
-  on(event: string, callback: () => void): void;
-}
-const clientes = new Set<SocketCliente>();
+// Fastify WebSocket v10 entrega el socket directamente al handler.
+const clientes = new Set<WebSocket>();
 
 export async function alertaRoutes(app: FastifyInstance) {
 
   // ─── WebSocket /ws/alertas ─────────────────────────────────────────
   // El cliente se conecta aquí y recibe todas las actualizaciones en tiempo real
-  app.get('/ws/alertas', { websocket: true }, async (connection) => {
-    const ws = connection.socket;
+  app.get('/ws/alertas', { websocket: true }, async (ws) => {
     clientes.add(ws);
 
     // Al conectar, envía todas las alertas activas
@@ -97,7 +92,8 @@ export async function alertaRoutes(app: FastifyInstance) {
   // ─── POST /api/alertas/:id/confirmar ──────────────────────────────
   app.post('/api/alertas/:id/confirmar', { preHandler: requireAuth }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const alerta = await confirmarAlerta(id);
+    const { uid } = req.user as { uid: string };
+    const alerta = await confirmarAlerta(id, uid);
     if (!alerta) return reply.status(404).send({ error: 'Alerta no encontrada o expirada' });
 
     await broadcast({ tipo: 'alerta_actualizada', alerta });
@@ -107,6 +103,12 @@ export async function alertaRoutes(app: FastifyInstance) {
   // ─── DELETE /api/alertas/:id ───────────────────────────────────────
   app.delete('/api/alertas/:id', { preHandler: requireAuth }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const { uid } = req.user as { uid: string };
+    const alerta = (await obtenerAlertasActivas()).find((item) => item.id === id);
+    if (!alerta) return reply.status(404).send({ error: 'Alerta no encontrada o expirada' });
+    if (alerta.reportadoPor !== uid) {
+      return reply.status(403).send({ error: 'Solo quien creó la alerta puede eliminarla' });
+    }
     await eliminarAlerta(id);
     await broadcast({ tipo: 'alerta_eliminada', id });
     return reply.send({ ok: true });

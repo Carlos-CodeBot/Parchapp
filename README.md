@@ -11,6 +11,8 @@ ParchApp es una aplicación móvil comunitaria para descubrir, publicar y califi
 
 No es necesario crear un proyecto de Firebase ni contratar ningún servicio externo.
 
+> **Entorno local sin certificados:** esta configuración usa HTTP y WebSocket (`http://` y `ws://`) exclusivamente para desarrollo en la red local. Nginx no carga certificados, no escucha en el puerto 443 y no redirige a HTTPS. No expongas este entorno directamente a Internet.
+
 ---
 
 ## 1. Requisitos
@@ -73,7 +75,7 @@ Para una prueba local puedes reemplazar el contenido de `.env` por lo siguiente:
 ```dotenv
 PORT=3000
 HOST=0.0.0.0
-NODE_ENV=production
+NODE_ENV=development
 CORS_ORIGIN=*
 
 # Debe contener al menos 32 caracteres.
@@ -109,6 +111,8 @@ Desde `parchapp-backend/parchapp-backend` ejecuta:
 ```bash
 docker compose up --build -d
 ```
+
+La primera construcción descarga las imágenes y puede tardar varios minutos. No necesitas crear carpetas de certificados ni archivos `fullchain.pem`/`privkey.pem`.
 
 Esto crea cinco contenedores:
 
@@ -155,7 +159,7 @@ curl -X POST http://localhost/api/auth/registro \
   -d '{"nombre":"Usuario local","email":"local@example.com","password":"prueba123"}'
 ```
 
-La respuesta debe incluir un `token` y un objeto `usuario`. El mismo correo no puede registrarse dos veces.
+La respuesta debe incluir un `token` y un objeto `usuario`. El mismo correo no puede registrarse dos veces y la contraseña debe tener entre 8 y 128 caracteres.
 
 ---
 
@@ -248,6 +252,18 @@ La aplicación solicitará permisos de ubicación y acceso a fotografías. Acép
 ### Google Maps
 
 Expo Go normalmente permite probar `react-native-maps`. Para una compilación nativa propia debes reemplazar las claves de ejemplo de `parchapp-frontend/parchapp/app.json` por claves válidas de **Maps SDK for Android** y **Maps SDK for iOS**. Restringe las claves por identificador de aplicación antes de distribuirla.
+
+### Alertas por WebSocket
+
+El endpoint local es `ws://HOST/ws/alertas`. El backend usa la firma de `@fastify/websocket` v10, que entrega el socket directamente:
+
+```ts
+app.get('/ws/alertas', { websocket: true }, async (ws) => {
+  // usar ws.send(...), ws.on(...)
+});
+```
+
+No uses `connection.socket`: esa forma corresponde a versiones anteriores del plugin.
 
 ---
 
@@ -362,4 +378,3 @@ docker compose restart api
 ```
 
 Confirma además que `JWT_SECRET` tenga al menos 32 caracteres y que las contraseñas de PostgreSQL y MinIO coincidan con las variables del archivo `.env`.
-

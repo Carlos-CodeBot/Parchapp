@@ -7,7 +7,7 @@ import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 
 import { pool } from './db/pool';
-import { redis } from './db/redis';
+import { redis, redisPub, redisSub } from './db/redis';
 import { initMinio } from './db/minio';
 import { authRoutes } from './routes/auth';
 import { parchaderoRoutes } from './routes/parchaderos';
@@ -77,6 +77,8 @@ signals.forEach((signal) => {
     await app.close();
     await pool.end();
     await redis.quit();
+    await redisPub.quit();
+    await redisSub.quit();
     process.exit(0);
   });
 });

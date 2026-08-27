@@ -4,6 +4,10 @@ Stack: **Fastify + PostgreSQL + Redis + MinIO + Nginx + Docker**
 
 Todo corre en cualquier VPS o servidor con Docker Compose, usando componentes open source sin costos por usuario ni dependencia de Firebase.
 
+## Desarrollo local: no requiere SSL
+
+El Compose incluido está diseñado para pruebas locales: Nginx escucha solamente por HTTP en el puerto 80 y el WebSocket utiliza `ws://`. No se montan certificados, no existe un listener 443 y no se redirige a HTTPS. TLS debe agregarse después, al preparar un despliegue público.
+
 ---
 
 ## Arquitectura
