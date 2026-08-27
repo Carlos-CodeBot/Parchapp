@@ -1,16 +1,16 @@
 // src/screens/MapScreen.tsx
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import {
   StyleSheet, View, TouchableOpacity, Text, Pressable,
-  Platform, Alert,
+  Alert, TextInput, ScrollView,
 } from 'react-native';
-import MapView, { Marker, Callout, MapPressEvent, Region } from 'react-native-maps';
+import MapView, { Marker, Callout, LongPressEvent, Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useStore } from '../store/useStore';
 import { useLocation } from '../hooks/useLocation';
 import { suscribirParchaderos } from '../services/parchaderos.service';
 import { suscribirAlertas } from '../services/alertas.service';
-import { PARCHADERO_CONFIG, ALERTA_CONFIG, Parchadero, Alerta } from '../types';
+import { PARCHADERO_CONFIG, ALERTA_CONFIG, Parchadero, Alerta, ParchaderoTipo } from '../types';
 import ParchaderoBottomSheet from '../components/ParchaderoBottomSheet';
 import AgregarParchaderoSheet from '../components/AgregarParchaderoSheet';
 import AlertaPanel from '../components/AlertaPanel';
@@ -25,6 +25,8 @@ const REGION_INICIAL: Region = {
 
 export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
+  const [busqueda, setBusqueda] = useState('');
+  const [filtro, setFiltro] = useState<ParchaderoTipo | 'todos'>('todos');
 
   const {
     parchaderos, setParchaderos,
@@ -37,6 +39,15 @@ export default function MapScreen() {
   } = useStore();
 
   useLocation(); // pide permisos y actualiza ubicacion en el store
+
+  const parchaderosVisibles = useMemo(() => {
+    const termino = busqueda.trim().toLocaleLowerCase('es');
+    return parchaderos
+      .filter((p) => filtro === 'todos' || p.tipo === filtro)
+      .filter((p) => !termino || [p.nombre, p.descripcion, ...p.tags]
+        .some((texto) => texto.toLocaleLowerCase('es').includes(termino)))
+      .sort((a, b) => b.calificacionPromedio - a.calificacionPromedio);
+  }, [busqueda, filtro, parchaderos]);
 
   // Suscribirse a parchaderos en tiempo real
   useEffect(() => {
@@ -63,7 +74,7 @@ export default function MapScreen() {
   }, [ubicacion?.lat]);
 
   // Long press en el mapa → modo "agregar parchadero"
-  const handleLongPress = useCallback((e: MapPressEvent) => {
+  const handleLongPress = useCallback((e: LongPressEvent) => {
     const { latitude, longitude } = e.nativeEvent.coordinate;
     setCoordenaddasNuevoPin({ lat: latitude, lng: longitude });
     setMostrarFormAgregar(true);
@@ -99,7 +110,7 @@ export default function MapScreen() {
         }}
       >
         {/* ── Pines de parchaderos ── */}
-        {parchaderos.map((p) => (
+        {parchaderosVisibles.map((p) => (
           <ParchaderoMarker
             key={p.id}
             parchadero={p}
@@ -113,10 +124,47 @@ export default function MapScreen() {
         ))}
       </MapView>
 
-      {/* ── Barra de búsqueda (placeholder por ahora) ── */}
+      {/* ── Búsqueda y filtros de la comunidad ── */}
       <View style={styles.searchBar}>
-        <Ionicons name="search" size={16} color="#888" />
-        <Text style={styles.searchPlaceholder}>Buscar parchaderos...</Text>
+        <Ionicons name="search" size={19} color="#6B7280" />
+        <TextInput
+          accessibilityLabel="Buscar parchaderos"
+          style={styles.searchInput}
+          placeholder="Busca un parche, ambiente o plan"
+          placeholderTextColor="#9CA3AF"
+          value={busqueda}
+          onChangeText={setBusqueda}
+          returnKeyType="search"
+        />
+        {!!busqueda && (
+          <TouchableOpacity onPress={() => setBusqueda('')} accessibilityLabel="Limpiar búsqueda">
+            <Ionicons name="close-circle" size={19} color="#9CA3AF" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filtersScroll}
+        contentContainerStyle={styles.filtersContent}
+      >
+        <FilterChip label="Todos" active={filtro === 'todos'} onPress={() => setFiltro('todos')} />
+        {(Object.entries(PARCHADERO_CONFIG) as [ParchaderoTipo, typeof PARCHADERO_CONFIG[ParchaderoTipo]][])
+          .map(([tipo, cfg]) => (
+            <FilterChip
+              key={tipo}
+              label={`${cfg.emoji} ${cfg.label}`}
+              active={filtro === tipo}
+              onPress={() => setFiltro(tipo)}
+            />
+          ))}
+      </ScrollView>
+
+      <View style={styles.resultsPill}>
+        <Text style={styles.resultsText}>
+          {parchaderosVisibles.length} {parchaderosVisibles.length === 1 ? 'parche' : 'parches'} cerca
+        </Text>
       </View>
 
       {/* ── Botón alerta (tipo Waze) ── */}
@@ -163,6 +211,19 @@ export default function MapScreen() {
         <AlertaPanel onClose={() => setMostrarPanelAlerta(false)} />
       )}
     </View>
+  );
+}
+
+function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.filterChip, active && styles.filterChipActive]}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
+      <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -219,10 +280,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
   },
-  searchPlaceholder: { color: '#aaa', fontSize: 14 },
+  searchInput: { flex: 1, color: '#111827', fontSize: 14, paddingVertical: 0 },
+  filtersScroll: { position: 'absolute', top: 104, left: 0, right: 0, maxHeight: 42 },
+  filtersContent: { paddingHorizontal: 12, gap: 8 },
+  filterChip: {
+    height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: '#fff',
+    justifyContent: 'center', borderWidth: 1, borderColor: '#E5E7EB',
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+  },
+  filterChipActive: { backgroundColor: '#6558D3', borderColor: '#6558D3' },
+  filterChipText: { color: '#4B5563', fontSize: 12, fontWeight: '600' },
+  filterChipTextActive: { color: '#fff' },
+  resultsPill: {
+    position: 'absolute', top: 154, left: 12, backgroundColor: 'rgba(17,24,39,0.86)',
+    borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  resultsText: { color: '#fff', fontWeight: '700', fontSize: 11 },
 
   alertBtn: {
-    position: 'absolute', top: 106, right: 12,
+    position: 'absolute', top: 154, right: 12,
     backgroundColor: '#fff', borderRadius: 20,
     paddingHorizontal: 12, paddingVertical: 6,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, elevation: 3,

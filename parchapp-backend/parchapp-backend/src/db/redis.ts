@@ -29,16 +29,28 @@ export interface AlertaRedis {
 /** Guarda una alerta en Redis con expiración automática */
 export async function guardarAlerta(alerta: AlertaRedis) {
   const key = `alerta:${alerta.id}`;
-  await redis.setex(key, DURACION_ALERTA_SEG, JSON.stringify(alerta));
-  // Índice geoespacial para buscar alertas cercanas
-  await redis.geoadd('alertas:geo', alerta.lng, alerta.lat, alerta.id);
+  const confirmacionesKey = `alerta-confirmaciones:${alerta.id}`;
+  await redis.multi()
+    .setex(key, DURACION_ALERTA_SEG, JSON.stringify(alerta))
+    .sadd(confirmacionesKey, alerta.reportadoPor)
+    .expire(confirmacionesKey, DURACION_ALERTA_SEG)
+    .geoadd('alertas:geo', alerta.lng, alerta.lat, alerta.id)
+    .exec();
 }
 
 /** Obtiene todas las alertas activas (las expiradas desaparecen solas) */
 export async function obtenerAlertasActivas(): Promise<AlertaRedis[]> {
-  const ids = await redis.keys('alerta:*');
-  if (!ids.length) return [];
+  const ids: string[] = [];
+  let cursor = '0';
+  do {
+    const [siguienteCursor, encontradas] = await redis.scan(
+      cursor, 'MATCH', 'alerta:*', 'COUNT', 100
+    );
+    cursor = siguienteCursor;
+    ids.push(...encontradas);
+  } while (cursor !== '0');
 
+  if (!ids.length) return [];
   const vals = await redis.mget(...ids);
   return vals
     .filter(Boolean)
@@ -46,12 +58,16 @@ export async function obtenerAlertasActivas(): Promise<AlertaRedis[]> {
 }
 
 /** Suma una confirmación y extiende la vida 5 minutos */
-export async function confirmarAlerta(id: string): Promise<AlertaRedis | null> {
+export async function confirmarAlerta(id: string, usuarioId: string): Promise<AlertaRedis | null> {
   const key = `alerta:${id}`;
   const raw = await redis.get(key);
   if (!raw) return null;
 
   const alerta = JSON.parse(raw) as AlertaRedis;
+  const confirmacionesKey = `alerta-confirmaciones:${id}`;
+  const esNuevaConfirmacion = await redis.sadd(confirmacionesKey, usuarioId);
+  if (!esNuevaConfirmacion) return alerta;
+
   alerta.confirmaciones += 1;
   alerta.expiraEn = Math.min(
     alerta.expiraEn + 5 * 60 * 1000,
@@ -59,14 +75,19 @@ export async function confirmarAlerta(id: string): Promise<AlertaRedis | null> {
   );
 
   // Extiende 5 minutos más en Redis también
-  await redis.expire(key, DURACION_ALERTA_SEG + 5 * 60);
-  await redis.set(key, JSON.stringify(alerta));
+  const ttlActual = await redis.ttl(key);
+  const nuevoTtl = Math.max(ttlActual, 0) + 5 * 60;
+  await redis.multi()
+    .setex(key, nuevoTtl, JSON.stringify(alerta))
+    .expire(confirmacionesKey, nuevoTtl)
+    .exec();
   return alerta;
 }
 
 /** Elimina una alerta */
 export async function eliminarAlerta(id: string) {
   await redis.del(`alerta:${id}`);
+  await redis.del(`alerta-confirmaciones:${id}`);
   await redis.zrem('alertas:geo', id);
 }
 

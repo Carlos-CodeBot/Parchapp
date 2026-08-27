@@ -8,7 +8,7 @@ import AuthScreen from '../src/screens/AuthScreen';
 export default function Index() {
   const usuario = useStore((s) => s.usuario);
 
-  // Mientras Firebase verifica la sesión al arrancar (brevemente undefined)
+  // Mientras el API valida la sesión guardada (brevemente undefined)
   // se muestra un spinner. Cuando resuelve, va al mapa o al login.
   // Si quieres permitir uso anónimo (ver el mapa sin login),
   // cambia la condición: !usuario → false
