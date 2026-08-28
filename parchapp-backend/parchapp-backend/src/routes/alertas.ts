@@ -30,8 +30,8 @@ export async function alertaRoutes(app: FastifyInstance) {
     const activas = await obtenerAlertasActivas();
     ws.send(JSON.stringify({ tipo: 'estado_inicial', alertas: activas }));
 
-    ws.on('close', () => clientes.delete(ws as SocketCliente));
-    ws.on('error', () => clientes.delete(ws as SocketCliente));
+    ws.on('close', () => clientes.delete(ws));
+    ws.on('error', () => clientes.delete(ws));
   });
 
   // Redis Pub/Sub: cuando una alerta cambia en cualquier instancia del servidor,

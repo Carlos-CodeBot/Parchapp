@@ -19,15 +19,17 @@ const alertas_1 = require("./routes/alertas");
 const app = (0, fastify_1.default)({
     logger: {
         level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
-        transport: process.env.NODE_ENV !== 'production'
-            ? { target: 'pino-pretty', options: { colorize: true } }
-            : undefined,
     },
 });
 async function main() {
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+        throw new Error('JWT_SECRET debe tener al menos 32 caracteres');
+    }
     // ─── Plugins ────────────────────────────────────────────────────────
     await app.register(cors_1.default, {
-        origin: true, // En producción, limita esto a tu dominio: 'https://tu-dominio.com'
+        origin: process.env.CORS_ORIGIN === '*' || !process.env.CORS_ORIGIN
+            ? true
+            : process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()),
         credentials: true,
     });
     await app.register(jwt_1.default, {
@@ -68,6 +70,8 @@ signals.forEach((signal) => {
         await app.close();
         await pool_1.pool.end();
         await redis_1.redis.quit();
+        await redis_1.redisPub.quit();
+        await redis_1.redisSub.quit();
         process.exit(0);
     });
 });

@@ -23,7 +23,8 @@
         {
           "photosPermission": "ParchApp necesita acceso a tus fotos para que puedas subir imágenes de parchaderos."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "android": {
       "package": "com.parchapp.app",

@@ -23,13 +23,23 @@ const DURACION_ALERTA_SEG = 45 * 60; // 45 minutos
 /** Guarda una alerta en Redis con expiración automática */
 async function guardarAlerta(alerta) {
     const key = `alerta:${alerta.id}`;
-    await exports.redis.setex(key, DURACION_ALERTA_SEG, JSON.stringify(alerta));
-    // Índice geoespacial para buscar alertas cercanas
-    await exports.redis.geoadd('alertas:geo', alerta.lng, alerta.lat, alerta.id);
+    const confirmacionesKey = `alerta-confirmaciones:${alerta.id}`;
+    await exports.redis.multi()
+        .setex(key, DURACION_ALERTA_SEG, JSON.stringify(alerta))
+        .sadd(confirmacionesKey, alerta.reportadoPor)
+        .expire(confirmacionesKey, DURACION_ALERTA_SEG)
+        .geoadd('alertas:geo', alerta.lng, alerta.lat, alerta.id)
+        .exec();
 }
 /** Obtiene todas las alertas activas (las expiradas desaparecen solas) */
 async function obtenerAlertasActivas() {
-    const ids = await exports.redis.keys('alerta:*');
+    const ids = [];
+    let cursor = '0';
+    do {
+        const [siguienteCursor, encontradas] = await exports.redis.scan(cursor, 'MATCH', 'alerta:*', 'COUNT', 100);
+        cursor = siguienteCursor;
+        ids.push(...encontradas);
+    } while (cursor !== '0');
     if (!ids.length)
         return [];
     const vals = await exports.redis.mget(...ids);
@@ -38,22 +48,31 @@ async function obtenerAlertasActivas() {
         .map((v) => JSON.parse(v));
 }
 /** Suma una confirmación y extiende la vida 5 minutos */
-async function confirmarAlerta(id) {
+async function confirmarAlerta(id, usuarioId) {
     const key = `alerta:${id}`;
     const raw = await exports.redis.get(key);
     if (!raw)
         return null;
     const alerta = JSON.parse(raw);
+    const confirmacionesKey = `alerta-confirmaciones:${id}`;
+    const esNuevaConfirmacion = await exports.redis.sadd(confirmacionesKey, usuarioId);
+    if (!esNuevaConfirmacion)
+        return alerta;
     alerta.confirmaciones += 1;
     alerta.expiraEn = Math.min(alerta.expiraEn + 5 * 60 * 1000, alerta.creadoEn + 2 * 60 * 60 * 1000);
     // Extiende 5 minutos más en Redis también
-    await exports.redis.expire(key, DURACION_ALERTA_SEG + 5 * 60);
-    await exports.redis.set(key, JSON.stringify(alerta));
+    const ttlActual = await exports.redis.ttl(key);
+    const nuevoTtl = Math.max(ttlActual, 0) + 5 * 60;
+    await exports.redis.multi()
+        .setex(key, nuevoTtl, JSON.stringify(alerta))
+        .expire(confirmacionesKey, nuevoTtl)
+        .exec();
     return alerta;
 }
 /** Elimina una alerta */
 async function eliminarAlerta(id) {
     await exports.redis.del(`alerta:${id}`);
+    await exports.redis.del(`alerta-confirmaciones:${id}`);
     await exports.redis.zrem('alertas:geo', id);
 }
 /** Pub/Sub: publica un evento a todos los clientes WebSocket conectados */

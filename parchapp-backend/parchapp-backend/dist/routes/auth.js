@@ -8,13 +8,13 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const zod_1 = require("zod");
 const pool_1 = require("../db/pool");
 const RegisterSchema = zod_1.z.object({
-    nombre: zod_1.z.string().min(2).max(60),
-    email: zod_1.z.string().email(),
-    password: zod_1.z.string().min(6),
+    nombre: zod_1.z.string().trim().min(2).max(60),
+    email: zod_1.z.string().trim().email().transform((email) => email.toLowerCase()),
+    password: zod_1.z.string().min(8).max(128),
 });
 const LoginSchema = zod_1.z.object({
-    email: zod_1.z.string().email(),
-    password: zod_1.z.string(),
+    email: zod_1.z.string().trim().email().transform((email) => email.toLowerCase()),
+    password: zod_1.z.string().min(1).max(128),
 });
 async function authRoutes(app) {
     // POST /api/auth/registro
@@ -23,13 +23,19 @@ async function authRoutes(app) {
         if (!body.success)
             return reply.status(400).send({ error: body.error.flatten() });
         const { nombre, email, password } = body.data;
-        const existe = await pool_1.pool.query('SELECT id FROM usuarios WHERE email = $1', [email]);
-        if (existe.rows.length)
-            return reply.status(409).send({ error: 'Email ya registrado' });
         const hash = await bcrypt_1.default.hash(password, 12);
-        const { rows } = await pool_1.pool.query(`INSERT INTO usuarios (nombre, email, password)
-       VALUES ($1, $2, $3)
-       RETURNING id, nombre, email, puntos, creado_en`, [nombre, email, hash]);
+        let rows;
+        try {
+            ({ rows } = await pool_1.pool.query(`INSERT INTO usuarios (nombre, email, password)
+         VALUES ($1, $2, $3)
+         RETURNING id, nombre, email, puntos, creado_en`, [nombre, email, hash]));
+        }
+        catch (error) {
+            if (error.code === '23505') {
+                return reply.status(409).send({ error: 'Email ya registrado' });
+            }
+            throw error;
+        }
         const usuario = rows[0];
         const token = app.jwt.sign({ uid: usuario.id, nombre: usuario.nombre });
         return reply.status(201).send({ token, usuario });
@@ -58,7 +64,7 @@ async function authRoutes(app) {
                 await req.jwtVerify();
             }
             catch {
-                reply.status(401).send({ error: 'No autorizado' });
+                return reply.status(401).send({ error: 'No autorizado' });
             }
         }
     }, async (req, reply) => {

@@ -17,13 +17,15 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 15s
     networks:
       - parchapp_net
+    ports:
+      - "3000:3000"
 
   # ─── PostgreSQL ────────────────────────────────────────────
   postgres:

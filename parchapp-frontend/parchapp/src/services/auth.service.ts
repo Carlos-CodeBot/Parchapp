@@ -1,12 +1,10 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authApi, setToken } from './api';
 import { Usuario } from '../types';
 
-declare const require: (moduleName: string) => unknown;
-const AsyncStorage = require('@react-native-async-storage/async-storage') as {
-  getItem(key: string): Promise<string | null>;
-  setItem(key: string, value: string): Promise<void>;
-  removeItem(key: string): Promise<void>;
-};
+
+
+
 
 const TOKEN_KEY = '@parchapp:token';
 
@@ -39,7 +37,8 @@ export async function login(email: string, password: string): Promise<Usuario> {
 }
 
 export async function logout() {
-  await signOut(auth);
+  await AsyncStorage.removeItem(TOKEN_KEY);
+  setToken(null);
 }
 
 /** Restaura el JWT guardado y valida que siga vigente contra el servidor. */

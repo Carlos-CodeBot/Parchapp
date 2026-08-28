@@ -7,7 +7,7 @@ async function requireAuth(req, reply) {
         await req.jwtVerify();
     }
     catch {
-        reply.status(401).send({ error: 'No autorizado' });
+        return reply.status(401).send({ error: 'No autorizado' });
     }
 }
 // Middleware opcional: no rechaza si no hay token, pero lo parsea si existe

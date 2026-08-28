@@ -2,16 +2,15 @@
 // src/routes/alertas.ts
 // Las alertas usan dos canales:
 //   REST  → crear / confirmar / eliminar
-//   WS    → recibir actualizaciones en tiempo real (reemplaza Firebase RTDB)
+//   WS    → recibir actualizaciones en tiempo real desde Redis Pub/Sub
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.alertaRoutes = alertaRoutes;
-const ws_1 = require("ws");
 const zod_1 = require("zod");
 const uuid_1 = require("uuid");
 const redis_1 = require("../db/redis");
 const auth_1 = require("../middleware/auth");
 const TIPOS_ALERTA = ['policia', 'bloqueo', 'rumba', 'peligro', 'ruido', 'parche', 'lluvia', 'cerrado'];
-// Clientes WebSocket conectados
+// Fastify WebSocket v10 entrega el socket directamente al handler.
 const clientes = new Set();
 async function alertaRoutes(app) {
     // ─── WebSocket /ws/alertas ─────────────────────────────────────────
@@ -32,7 +31,7 @@ async function alertaRoutes(app) {
     });
     redis_1.redisSub.on('message', (_channel, message) => {
         for (const ws of clientes) {
-            if (ws.readyState === ws_1.WebSocket.OPEN) {
+            if (ws.readyState === 1) {
                 ws.send(message);
             }
         }
@@ -43,12 +42,12 @@ async function alertaRoutes(app) {
         await redis_1.redisPub.publish('alertas:eventos', msg);
     }
     // ─── GET /api/alertas ──────────────────────────────────────────────
-    app.get('/', async (_req, reply) => {
+    app.get('/api/alertas', async (_req, reply) => {
         const alertas = await (0, redis_1.obtenerAlertasActivas)();
         return reply.send(alertas);
     });
     // ─── POST /api/alertas ─────────────────────────────────────────────
-    app.post('/', { preHandler: auth_1.requireAuth }, async (req, reply) => {
+    app.post('/api/alertas', { preHandler: auth_1.requireAuth }, async (req, reply) => {
         const body = zod_1.z.object({
             tipo: zod_1.z.enum(TIPOS_ALERTA),
             lat: zod_1.z.number().min(-90).max(90),
@@ -73,17 +72,25 @@ async function alertaRoutes(app) {
         return reply.status(201).send(alerta);
     });
     // ─── POST /api/alertas/:id/confirmar ──────────────────────────────
-    app.post('/:id/confirmar', { preHandler: auth_1.requireAuth }, async (req, reply) => {
+    app.post('/api/alertas/:id/confirmar', { preHandler: auth_1.requireAuth }, async (req, reply) => {
         const { id } = req.params;
-        const alerta = await (0, redis_1.confirmarAlerta)(id);
+        const { uid } = req.user;
+        const alerta = await (0, redis_1.confirmarAlerta)(id, uid);
         if (!alerta)
             return reply.status(404).send({ error: 'Alerta no encontrada o expirada' });
         await broadcast({ tipo: 'alerta_actualizada', alerta });
         return reply.send(alerta);
     });
     // ─── DELETE /api/alertas/:id ───────────────────────────────────────
-    app.delete('/:id', { preHandler: auth_1.requireAuth }, async (req, reply) => {
+    app.delete('/api/alertas/:id', { preHandler: auth_1.requireAuth }, async (req, reply) => {
         const { id } = req.params;
+        const { uid } = req.user;
+        const alerta = (await (0, redis_1.obtenerAlertasActivas)()).find((item) => item.id === id);
+        if (!alerta)
+            return reply.status(404).send({ error: 'Alerta no encontrada o expirada' });
+        if (alerta.reportadoPor !== uid) {
+            return reply.status(403).send({ error: 'Solo quien creó la alerta puede eliminarla' });
+        }
         await (0, redis_1.eliminarAlerta)(id);
         await broadcast({ tipo: 'alerta_eliminada', id });
         return reply.send({ ok: true });

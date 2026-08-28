@@ -38,8 +38,8 @@ async function subirFoto(nombre, buffer, contentType) {
     await exports.minio.putObject(BUCKET, nombre, stream_1.Readable.from(buffer), buffer.length, {
         'Content-Type': contentType,
     });
-    const base = `http://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`;
-    return `${base}/${BUCKET}/${nombre}`;
+    const base = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+    return `${base}/media/${BUCKET}/${nombre}`;
 }
 /** Elimina una foto */
 async function eliminarFoto(nombre) {
