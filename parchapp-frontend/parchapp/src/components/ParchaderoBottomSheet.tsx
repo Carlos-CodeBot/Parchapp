@@ -34,7 +34,7 @@ export default function ParchaderoBottomSheet({ parchadero, onClose }: Props) {
   const translateY = useRef(new Animated.Value(SHEET_H)).current;
 
   const cfg = PARCHADERO_CONFIG[parchadero.tipo];
-
+console.log('📸 FOTOS PARCHADERO:', fotos);
   // Animación de entrada
   useEffect(() => {
     Animated.spring(translateY, {
@@ -163,7 +163,20 @@ export default function ParchaderoBottomSheet({ parchadero, onClose }: Props) {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosRow}>
             {fotos.map((url, i) => (
-              <Image key={i} source={{ uri: url }} style={styles.photo} />
+              <Image
+                key={`${url}-${i}`}
+                source={{ uri: url }}
+                style={styles.photo}
+                resizeMode="cover"
+                onLoad={() => console.log('✅ FOTO CARGADA:', url)}
+                onError={(e) =>
+                  console.log(
+                    '❌ ERROR FOTO:',
+                    url,
+                    e.nativeEvent.error
+                  )
+                }
+              />
             ))}
             {fotos.length === 0 && (
               <View style={styles.noPhotos}>

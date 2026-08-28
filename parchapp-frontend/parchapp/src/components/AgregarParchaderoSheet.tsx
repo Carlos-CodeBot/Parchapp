@@ -53,10 +53,10 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
 
   const seleccionarFoto = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.7,
-    });
+    mediaTypes: ['images'],
+    allowsMultipleSelection: true,
+    quality: 0.7,
+  });
     if (!result.canceled) {
       setFotosLocales((prev) => [
         ...prev,

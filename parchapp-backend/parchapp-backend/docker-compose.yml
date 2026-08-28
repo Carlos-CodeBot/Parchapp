@@ -75,7 +75,7 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "127.0.0.1:9001:9001" # Consola administrativa, solo desde el servidor
+      - "127.0.0.1:10001:9001" # Consola administrativa, solo desde el servidor
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
