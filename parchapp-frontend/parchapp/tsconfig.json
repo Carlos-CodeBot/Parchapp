@@ -5,9 +5,5 @@
     "module": "esnext",
     "noEmit": true
   },
-  "include": [
-    "app/**/*.tsx",
-    "src/**/*.ts",
-    "src/**/*.tsx"
-  ]
+  "include": ["app/**/*.tsx", "src/**/*.ts", "src/**/*.tsx", "expo-env.d.ts"]
 }

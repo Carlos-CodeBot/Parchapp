@@ -35,8 +35,13 @@ export async function obtenerParchadero(id: string): Promise<Parchadero> {
   return parchaderoApi.obtener(id);
 }
 
-export async function subirFoto(parchaderoId: string, uriLocal: string): Promise<string> {
-  const { url } = await parchaderoApi.subirFoto(parchaderoId, uriLocal);
+export async function subirFoto(
+  parchaderoId: string,
+  uriLocal: string,
+  mimeType?: string,
+  fileName?: string
+): Promise<string> {
+  const { url } = await parchaderoApi.subirFoto(parchaderoId, uriLocal, mimeType, fileName);
   return url;
 }
 

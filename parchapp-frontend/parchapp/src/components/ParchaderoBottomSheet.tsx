@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, TextInput, Dimensions, Animated, PanResponder, KeyboardAvoidingView, Platform,
+  Image, TextInput, Dimensions, Animated, PanResponder, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,6 +30,7 @@ export default function ParchaderoBottomSheet({ parchadero, onClose }: Props) {
   const [nuevoComentario, setNuevoComentario] = useState('');
   const [miCalificacion, setMiCalificacion] = useState(0);
   const [subiendoFoto, setSubiendoFoto] = useState(false);
+  const [fotos, setFotos] = useState(parchadero.fotos);
   const translateY = useRef(new Animated.Value(SHEET_H)).current;
 
   const cfg = PARCHADERO_CONFIG[parchadero.tipo];
@@ -46,6 +47,8 @@ export default function ParchaderoBottomSheet({ parchadero, onClose }: Props) {
     const unsub = suscribirComentarios(parchadero.id, setComentarios);
     return unsub;
   }, [parchadero.id]);
+
+  useEffect(() => setFotos(parchadero.fotos), [parchadero.fotos]);
 
   const cerrar = () => {
     Animated.timing(translateY, {
@@ -89,8 +92,15 @@ export default function ParchaderoBottomSheet({ parchadero, onClose }: Props) {
     });
     if (!result.canceled && result.assets[0]) {
       setSubiendoFoto(true);
-      await subirFoto(parchadero.id, result.assets[0].uri);
-      setSubiendoFoto(false);
+      const asset = result.assets[0];
+      try {
+        const url = await subirFoto(parchadero.id, asset.uri, asset.mimeType, asset.fileName || undefined);
+        setFotos((actuales) => [...actuales, url]);
+      } catch {
+        Alert.alert('No se pudo subir la foto', 'Revisa tu conexión e intenta nuevamente.');
+      } finally {
+        setSubiendoFoto(false);
+      }
     }
   };
 
@@ -152,10 +162,10 @@ export default function ParchaderoBottomSheet({ parchadero, onClose }: Props) {
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosRow}>
-            {parchadero.fotos.map((url, i) => (
+            {fotos.map((url, i) => (
               <Image key={i} source={{ uri: url }} style={styles.photo} />
             ))}
-            {parchadero.fotos.length === 0 && (
+            {fotos.length === 0 && (
               <View style={styles.noPhotos}>
                 <Ionicons name="images-outline" size={24} color="#ccc" />
                 <Text style={styles.noPhotosText}>Sin fotos aún</Text>

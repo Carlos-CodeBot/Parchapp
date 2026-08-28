@@ -79,15 +79,22 @@ export const parchaderoApi = {
     lat: number; lng: number; tags: string[];
   }) => request<any>('/api/parchaderos', { method: 'POST', body: JSON.stringify(datos) }),
 
-  subirFoto: async (id: string, uri: string) => {
+  subirFoto: async (id: string, uri: string, mimeType?: string, fileName?: string) => {
+    const resolvedName = fileName || uri.split('/').pop() || 'foto.jpg';
+    const extension = resolvedName.split('.').pop()?.toLowerCase();
+    const resolvedType = mimeType
+      || (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg');
     const formData = new FormData();
-    formData.append('file', { uri, name: 'foto.jpg', type: 'image/jpeg' } as any);
+    formData.append('file', { uri, name: resolvedName, type: resolvedType } as any);
     const res = await fetch(`${API_BASE_URL}/api/parchaderos/${id}/fotos`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${_token}` },
       body: formData,
     });
-    if (!res.ok) throw new Error('Error subiendo foto');
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.error || 'Error subiendo foto');
+    }
     return res.json() as Promise<{ url: string }>;
   },
 

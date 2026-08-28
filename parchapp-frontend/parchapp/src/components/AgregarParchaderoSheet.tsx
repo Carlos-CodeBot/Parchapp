@@ -7,12 +7,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { PARCHADERO_CONFIG, TAGS_DISPONIBLES, ParchaderoTipo } from '../types';
-import { crearParchadero, subirFoto } from '../services/parchaderos.service';
+import { crearParchadero, obtenerParchadero, subirFoto } from '../services/parchaderos.service';
 import { useStore } from '../store/useStore';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
 interface Props { onClose: () => void }
+
+interface FotoLocal {
+  uri: string;
+  mimeType?: string;
+  fileName?: string;
+}
 
 export default function AgregarParchaderoSheet({ onClose }: Props) {
   const usuario = useStore((s) => s.usuario);
@@ -22,7 +28,7 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
   const [tipo, setTipo] = useState<ParchaderoTipo>('cafe');
   const [descripcion, setDescripcion] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [fotosLocales, setFotosLocales] = useState<string[]>([]);
+  const [fotosLocales, setFotosLocales] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
 
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
@@ -54,7 +60,11 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
     if (!result.canceled) {
       setFotosLocales((prev) => [
         ...prev,
-        ...result.assets.map((a) => a.uri),
+        ...result.assets.map((asset) => ({
+          uri: asset.uri,
+          mimeType: asset.mimeType,
+          fileName: asset.fileName || undefined,
+        })),
       ]);
     }
   };
@@ -95,7 +105,19 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
       });
 
       // 2. Subir fotos (en paralelo)
-      await Promise.all(fotosLocales.map((uri) => subirFoto(id, uri)));
+      await Promise.all(fotosLocales.map((foto) =>
+        subirFoto(id, foto.uri, foto.mimeType, foto.fileName)
+      ));
+
+      // Refresca el lugar inmediatamente para que las URLs de MinIO aparezcan
+      // sin esperar al siguiente ciclo de sincronización del mapa.
+      const parchaderoActualizado = await obtenerParchadero(id);
+      useStore.setState((state) => ({
+        parchaderos: [
+          parchaderoActualizado,
+          ...state.parchaderos.filter((item) => item.id !== id),
+        ],
+      }));
 
       cerrar();
     } catch (e) {
@@ -182,13 +204,13 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
           </TouchableOpacity>
           {fotosLocales.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPreviewRow}>
-              {fotosLocales.map((uri) => (
-                <View key={uri} style={styles.photoPreviewWrap}>
-                  <Image source={{ uri }} style={styles.photoPreview} />
+              {fotosLocales.map((foto) => (
+                <View key={foto.uri} style={styles.photoPreviewWrap}>
+                  <Image source={{ uri: foto.uri }} style={styles.photoPreview} resizeMode="cover" />
                   <TouchableOpacity
                     accessibilityLabel="Eliminar foto"
                     style={styles.removePhoto}
-                    onPress={() => setFotosLocales((prev) => prev.filter((foto) => foto !== uri))}
+                    onPress={() => setFotosLocales((prev) => prev.filter((item) => item.uri !== foto.uri))}
                   >
                     <Ionicons name="close" size={14} color="#fff" />
                   </TouchableOpacity>

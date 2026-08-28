@@ -14,6 +14,7 @@ import { PARCHADERO_CONFIG, ALERTA_CONFIG, Parchadero, Alerta, ParchaderoTipo } 
 import ParchaderoBottomSheet from '../components/ParchaderoBottomSheet';
 import AgregarParchaderoSheet from '../components/AgregarParchaderoSheet';
 import AlertaPanel from '../components/AlertaPanel';
+import PerfilUsuarioSheet from '../components/PerfilUsuarioSheet';
 
 // Coordenadas iniciales: Bucaramanga
 const REGION_INICIAL: Region = {
@@ -27,6 +28,7 @@ export default function MapScreen() {
   const mapRef = useRef<MapView>(null);
   const [busqueda, setBusqueda] = useState('');
   const [filtro, setFiltro] = useState<ParchaderoTipo | 'todos'>('todos');
+  const [mostrarPerfil, setMostrarPerfil] = useState(false);
 
   const {
     parchaderos, setParchaderos,
@@ -143,6 +145,14 @@ export default function MapScreen() {
         )}
       </View>
 
+      <TouchableOpacity
+        style={styles.profileButton}
+        onPress={() => setMostrarPerfil(true)}
+        accessibilityLabel="Abrir perfil"
+      >
+        <Ionicons name="person" size={20} color="#6558D3" />
+      </TouchableOpacity>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -210,6 +220,8 @@ export default function MapScreen() {
       {mostrarPanelAlerta && (
         <AlertaPanel onClose={() => setMostrarPanelAlerta(false)} />
       )}
+
+      <PerfilUsuarioSheet visible={mostrarPerfil} onClose={() => setMostrarPerfil(false)} />
     </View>
   );
 }
@@ -274,13 +286,18 @@ const styles = StyleSheet.create({
   map: { flex: 1 },
 
   searchBar: {
-    position: 'absolute', top: 52, left: 12, right: 12,
+    position: 'absolute', top: 52, left: 12, right: 62,
     backgroundColor: '#fff', borderRadius: 24,
     paddingHorizontal: 14, paddingVertical: 10,
     flexDirection: 'row', alignItems: 'center', gap: 8,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
   },
   searchInput: { flex: 1, color: '#111827', fontSize: 14, paddingVertical: 0 },
+  profileButton: {
+    position: 'absolute', top: 52, right: 12, width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4,
+  },
   filtersScroll: { position: 'absolute', top: 104, left: 0, right: 0, maxHeight: 42 },
   filtersContent: { paddingHorizontal: 12, gap: 8 },
   filterChip: {
