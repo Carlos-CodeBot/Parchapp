@@ -5,7 +5,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply) {
   try {
     await req.jwtVerify();
   } catch {
-    reply.status(401).send({ error: 'No autorizado' });
+    return reply.status(401).send({ error: 'No autorizado' });
   }
 }
 

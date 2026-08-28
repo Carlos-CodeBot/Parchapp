@@ -1,10 +1,8 @@
 // src/services/api.ts
-// Cliente HTTP/WS que reemplaza a Firebase.
-// Solo cambia API_BASE_URL para apuntar a tu servidor.
+// Cliente HTTP/WS para la API autohospedada de ParchApp.
 
-const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.X:3000'   // ← pon la IP de tu servidor en la red local
-  : 'https://TU_DOMINIO.com';   // ← dominio en producción
+export const API_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://localhost')
+  .replace(/\/$/, '');
 
 let _token: string | null = null;
 
@@ -21,11 +19,26 @@ async function request<T>(
   };
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('El servidor tardó demasiado en responder');
+    }
+    throw new Error('No se pudo conectar con ParchApp. Revisa tu conexión.');
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `Error ${res.status}`);
+    const message = typeof err.error === 'string'
+      ? err.error
+      : err.message || `Solicitud inválida (${res.status})`;
+    throw new Error(message);
   }
   return res.json();
 }
@@ -52,7 +65,10 @@ export const authApi = {
 
 export const parchaderoApi = {
   listar: (params?: { lat?: number; lng?: number; radio?: number; tipo?: string }) => {
-    const q = new URLSearchParams(params as any).toString();
+    const q = Object.entries(params || {})
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join('&');
     return request<any[]>(`/api/parchaderos${q ? '?' + q : ''}`);
   },
 
@@ -63,15 +79,22 @@ export const parchaderoApi = {
     lat: number; lng: number; tags: string[];
   }) => request<any>('/api/parchaderos', { method: 'POST', body: JSON.stringify(datos) }),
 
-  subirFoto: async (id: string, uri: string) => {
+  subirFoto: async (id: string, uri: string, mimeType?: string, fileName?: string) => {
+    const resolvedName = fileName || uri.split('/').pop() || 'foto.jpg';
+    const extension = resolvedName.split('.').pop()?.toLowerCase();
+    const resolvedType = mimeType
+      || (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg');
     const formData = new FormData();
-    formData.append('file', { uri, name: 'foto.jpg', type: 'image/jpeg' } as any);
+    formData.append('file', { uri, name: resolvedName, type: resolvedType } as any);
     const res = await fetch(`${API_BASE_URL}/api/parchaderos/${id}/fotos`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${_token}` },
       body: formData,
     });
-    if (!res.ok) throw new Error('Error subiendo foto');
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(error?.error || 'Error subiendo foto');
+    }
     return res.json() as Promise<{ url: string }>;
   },
 
@@ -107,7 +130,7 @@ export const alertaApi = {
 };
 
 // ─── WebSocket para alertas en tiempo real ────────────────────────────
-// Reemplaza Firebase Realtime Database
+// Canal de alertas en tiempo real con reconexión exponencial.
 
 export function conectarAlertasWS(
   onEvento: (evento: { tipo: string; alerta?: any; alertas?: any[]; id?: string }) => void

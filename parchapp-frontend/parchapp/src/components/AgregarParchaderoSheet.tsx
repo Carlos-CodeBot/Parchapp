@@ -2,17 +2,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Animated, Dimensions, Alert, KeyboardAvoidingView, Platform,
+  TextInput, Animated, Dimensions, Alert, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { PARCHADERO_CONFIG, TAGS_DISPONIBLES, ParchaderoTipo } from '../types';
-import { crearParchadero, subirFoto } from '../services/parchaderos.service';
+import { crearParchadero, obtenerParchadero, subirFoto } from '../services/parchaderos.service';
 import { useStore } from '../store/useStore';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 
 interface Props { onClose: () => void }
+
+interface FotoLocal {
+  uri: string;
+  mimeType?: string;
+  fileName?: string;
+}
 
 export default function AgregarParchaderoSheet({ onClose }: Props) {
   const usuario = useStore((s) => s.usuario);
@@ -22,7 +28,7 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
   const [tipo, setTipo] = useState<ParchaderoTipo>('cafe');
   const [descripcion, setDescripcion] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [fotosLocales, setFotosLocales] = useState<string[]>([]);
+  const [fotosLocales, setFotosLocales] = useState<FotoLocal[]>([]);
   const [guardando, setGuardando] = useState(false);
 
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
@@ -54,7 +60,11 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
     if (!result.canceled) {
       setFotosLocales((prev) => [
         ...prev,
-        ...result.assets.map((a) => a.uri),
+        ...result.assets.map((asset) => ({
+          uri: asset.uri,
+          mimeType: asset.mimeType,
+          fileName: asset.fileName || undefined,
+        })),
       ]);
     }
   };
@@ -62,6 +72,14 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
   const guardar = async () => {
     if (!nombre.trim()) {
       Alert.alert('Falta el nombre', '¿Cómo se llama el parchadero?');
+      return;
+    }
+    if (!descripcion.trim()) {
+      Alert.alert('Falta la descripción', 'Cuéntale a la comunidad qué hace especial este lugar.');
+      return;
+    }
+    if (fotosLocales.length === 0) {
+      Alert.alert('Falta una foto', 'Sube al menos una imagen real del parchadero.');
       return;
     }
     if (!coordenadas) {
@@ -87,7 +105,19 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
       });
 
       // 2. Subir fotos (en paralelo)
-      await Promise.all(fotosLocales.map((uri) => subirFoto(id, uri)));
+      await Promise.all(fotosLocales.map((foto) =>
+        subirFoto(id, foto.uri, foto.mimeType, foto.fileName)
+      ));
+
+      // Refresca el lugar inmediatamente para que las URLs de MinIO aparezcan
+      // sin esperar al siguiente ciclo de sincronización del mapa.
+      const parchaderoActualizado = await obtenerParchadero(id);
+      useStore.setState((state) => ({
+        parchaderos: [
+          parchaderoActualizado,
+          ...state.parchaderos.filter((item) => item.id !== id),
+        ],
+      }));
 
       cerrar();
     } catch (e) {
@@ -142,7 +172,7 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
           </View>
 
           {/* Descripción */}
-          <Text style={styles.label}>Descripción</Text>
+          <Text style={styles.label}>Descripción *</Text>
           <TextInput
             style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
             placeholder="¿Qué tiene de especial este parche?"
@@ -167,11 +197,27 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
           </View>
 
           {/* Fotos */}
-          <Text style={styles.label}>Fotos del sitio</Text>
+          <Text style={styles.label}>Foto del sitio *</Text>
           <TouchableOpacity style={styles.photoBtn} onPress={seleccionarFoto}>
             <Ionicons name="camera-outline" size={20} color="#7F77DD" />
             <Text style={styles.photoBtnText}>Seleccionar fotos ({fotosLocales.length})</Text>
           </TouchableOpacity>
+          {fotosLocales.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPreviewRow}>
+              {fotosLocales.map((foto) => (
+                <View key={foto.uri} style={styles.photoPreviewWrap}>
+                  <Image source={{ uri: foto.uri }} style={styles.photoPreview} resizeMode="cover" />
+                  <TouchableOpacity
+                    accessibilityLabel="Eliminar foto"
+                    style={styles.removePhoto}
+                    onPress={() => setFotosLocales((prev) => prev.filter((item) => item.uri !== foto.uri))}
+                  >
+                    <Ionicons name="close" size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
 
           {/* Ubicación */}
           <Text style={styles.label}>Ubicación</Text>
@@ -194,7 +240,7 @@ export default function AgregarParchaderoSheet({ onClose }: Props) {
 
 const styles = StyleSheet.create({
   sheet: {
-    position: 'absolute', inset: 0,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#fff',
     paddingTop: 50,
   },
@@ -241,6 +287,13 @@ const styles = StyleSheet.create({
     borderRadius: 12, padding: 14, justifyContent: 'center',
   },
   photoBtnText: { color: '#7F77DD', fontWeight: '600', fontSize: 14 },
+  photoPreviewRow: { marginTop: 10 },
+  photoPreviewWrap: { marginRight: 10 },
+  photoPreview: { width: 92, height: 72, borderRadius: 12 },
+  removePhoto: {
+    position: 'absolute', right: -5, top: -5, width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#222', alignItems: 'center', justifyContent: 'center',
+  },
 
   coordBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 6,

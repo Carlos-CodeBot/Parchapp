@@ -2,7 +2,11 @@
 
 Stack: **Fastify + PostgreSQL + Redis + MinIO + Nginx + Docker**
 
-Todo corre en tu servidor físico con Docker Compose. Cero dependencias de terceros.
+Todo corre en cualquier VPS o servidor con Docker Compose, usando componentes open source sin costos por usuario ni dependencia de Firebase.
+
+## Desarrollo local: no requiere SSL
+
+El Compose incluido está diseñado para pruebas locales: Nginx escucha solamente por HTTP en el puerto 80 y el WebSocket utiliza `ws://`. No se montan certificados, no existe un listener 443 y no se redirige a HTTPS. TLS debe agregarse después, al preparar un despliegue público.
 
 ---
 
@@ -12,15 +16,15 @@ Todo corre en tu servidor físico con Docker Compose. Cero dependencias de terce
 Internet
     │
     ▼
- Nginx :443/:80          ← SSL, rate limiting, proxy
+ Nginx :80               ← rate limiting y proxy interno
     │
     ├──► Fastify :3000   ← API REST + WebSocket
     │        │
-    │        ├──► PostgreSQL :5432   ← parchaderos, usuarios, comentarios
+    │        ├──► PostgreSQL/PostGIS ← datos y consultas geográficas
     │        ├──► Redis :6379        ← alertas en tiempo real, expiración automática
     │        └──► MinIO :9000        ← fotos (compatible con S3)
     │
-    └──► MinIO :9000     ← acceso público a fotos (URLs directas)
+    └──► MinIO :9000     ← fotos publicadas por `/media/`
 ```
 
 ---
@@ -30,7 +34,7 @@ Internet
 - Ubuntu 22.04 LTS (recomendado)
 - Docker + Docker Compose
 - Mínimo 2 GB RAM, 20 GB disco
-- Puerto 80, 443 y 3000 abiertos en el firewall
+- Puerto 80 disponible para el proxy o túnel; PostgreSQL, Redis y la API no se exponen directamente
 
 ---
 
@@ -61,14 +65,11 @@ nano .env   # Cambia las passwords y la IP pública
 docker compose up -d
 ```
 
-### 5. Ejecuta las migraciones (solo la primera vez)
-```bash
-docker compose exec api npm run db:migrate
-```
+Las migraciones se ejecutan automáticamente al iniciar el contenedor de la API y son idempotentes.
 
-### 6. Verifica que todo esté corriendo
+### 5. Verifica que todo esté corriendo
 ```bash
-curl http://localhost:3000/health
+curl http://localhost/health
 # Respuesta esperada: {"status":"ok","postgres":true,"redis":true}
 ```
 
@@ -76,10 +77,7 @@ curl http://localhost:3000/health
 
 ## Acceso desde la red local (desarrollo)
 
-Desde la app móvil, cambia en `src/services/api.ts`:
-```js
-const API_BASE_URL = 'http://192.168.1.X:3000'  // IP de tu servidor
-```
+Desde la app móvil configura `EXPO_PUBLIC_API_URL=http://192.168.1.X`.
 
 ---
 
@@ -112,17 +110,18 @@ cloudflared tunnel login
 cloudflared tunnel create parchapp
 cloudflared tunnel route dns parchapp api.TU_DOMINIO.com
 
-# Configura y arranca
+# Configura el ingress del túnel con service: http://localhost:80 y arranca
 cloudflared tunnel run parchapp
 ```
 
-### SSL con Let's Encrypt (si abres puertos directamente)
+### HTTPS directo con Caddy (alternativa al túnel)
+
+Si expones el servidor directamente, cambia el puerto de Nginx en Compose a `127.0.0.1:8080:80` y coloca Caddy delante. Caddy obtiene y renueva Let's Encrypt automáticamente:
+
 ```bash
-sudo apt install certbot
-sudo certbot certonly --standalone -d parchapp.duckdns.org
-# Los certs quedan en /etc/letsencrypt/live/parchapp.duckdns.org/
-sudo cp /etc/letsencrypt/live/parchapp.duckdns.org/fullchain.pem docker/certs/
-sudo cp /etc/letsencrypt/live/parchapp.duckdns.org/privkey.pem docker/certs/
+api.tu-dominio.com {
+  reverse_proxy localhost:8080
+}
 ```
 
 ---
@@ -149,6 +148,6 @@ cat backup_FECHA.sql | docker compose exec -T postgres psql -U parchapp parchapp
 ---
 
 ## Consola de MinIO (administrar fotos)
-Abre en el navegador: `http://TU_IP:9001`
+Por seguridad solo escucha en localhost. Abre un túnel SSH con `ssh -L 9001:localhost:9001 usuario@TU_IP` y visita `http://localhost:9001`.
 - Usuario: el valor de `MINIO_ACCESS_KEY` en tu `.env`
 - Password: el valor de `MINIO_SECRET_KEY`

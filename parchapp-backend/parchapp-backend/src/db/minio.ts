@@ -17,18 +17,20 @@ export async function initMinio() {
   const exists = await minio.bucketExists(BUCKET);
   if (!exists) {
     await minio.makeBucket(BUCKET, 'us-east-1');
-    // Política pública para que las fotos sean accesibles por URL directa
-    await minio.setBucketPolicy(BUCKET, JSON.stringify({
-      Version: '2012-10-17',
-      Statement: [{
-        Effect: 'Allow',
-        Principal: { AWS: ['*'] },
-        Action: ['s3:GetObject'],
-        Resource: [`arn:aws:s3:::${BUCKET}/*`],
-      }],
-    }));
     console.log(`✅ Bucket "${BUCKET}" creado`);
   }
+
+  // Se aplica en cada arranque: un bucket creado anteriormente también debe
+  // poder servir sus imágenes a través del proxy público /media/.
+  await minio.setBucketPolicy(BUCKET, JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [{
+      Effect: 'Allow',
+      Principal: { AWS: ['*'] },
+      Action: ['s3:GetObject'],
+      Resource: [`arn:aws:s3:::${BUCKET}/*`],
+    }],
+  }));
 }
 
 /** Sube una foto y retorna la URL pública */
@@ -40,8 +42,8 @@ export async function subirFoto(
   await minio.putObject(BUCKET, nombre, Readable.from(buffer), buffer.length, {
     'Content-Type': contentType,
   });
-  const base = `http://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`;
-  return `${base}/${BUCKET}/${nombre}`;
+  const base = (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+  return `${base}/media/${BUCKET}/${nombre}`;
 }
 
 /** Elimina una foto */

@@ -5,14 +5,14 @@ import { z } from 'zod';
 import { pool } from '../db/pool';
 
 const RegisterSchema = z.object({
-  nombre:   z.string().min(2).max(60),
-  email:    z.string().email(),
-  password: z.string().min(6),
+  nombre:   z.string().trim().min(2).max(60),
+  email:    z.string().trim().email().transform((email) => email.toLowerCase()),
+  password: z.string().min(8).max(128),
 });
 
 const LoginSchema = z.object({
-  email:    z.string().email(),
-  password: z.string(),
+  email:    z.string().trim().email().transform((email) => email.toLowerCase()),
+  password: z.string().min(1).max(128),
 });
 
 export async function authRoutes(app: FastifyInstance) {
@@ -24,16 +24,21 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { nombre, email, password } = body.data;
 
-    const existe = await pool.query('SELECT id FROM usuarios WHERE email = $1', [email]);
-    if (existe.rows.length) return reply.status(409).send({ error: 'Email ya registrado' });
-
     const hash = await bcrypt.hash(password, 12);
-    const { rows } = await pool.query(
-      `INSERT INTO usuarios (nombre, email, password)
-       VALUES ($1, $2, $3)
-       RETURNING id, nombre, email, puntos, creado_en`,
-      [nombre, email, hash]
-    );
+    let rows;
+    try {
+      ({ rows } = await pool.query(
+        `INSERT INTO usuarios (nombre, email, password)
+         VALUES ($1, $2, $3)
+         RETURNING id, nombre, email, puntos, creado_en`,
+        [nombre, email, hash]
+      ));
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        return reply.status(409).send({ error: 'Email ya registrado' });
+      }
+      throw error;
+    }
 
     const usuario = rows[0];
     const token = app.jwt.sign({ uid: usuario.id, nombre: usuario.nombre });
@@ -66,7 +71,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.get('/me', {
     preHandler: async (req, reply) => {
       try { await req.jwtVerify(); }
-      catch { reply.status(401).send({ error: 'No autorizado' }); }
+      catch { return reply.status(401).send({ error: 'No autorizado' }); }
     }
   }, async (req, reply) => {
     const { uid } = req.user as { uid: string };

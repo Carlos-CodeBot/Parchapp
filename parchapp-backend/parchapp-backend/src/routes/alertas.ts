@@ -1,10 +1,10 @@
 // src/routes/alertas.ts
 // Las alertas usan dos canales:
 //   REST  → crear / confirmar / eliminar
-//   WS    → recibir actualizaciones en tiempo real (reemplaza Firebase RTDB)
+//   WS    → recibir actualizaciones en tiempo real desde Redis Pub/Sub
 
 import { FastifyInstance } from 'fastify';
-import { WebSocket } from 'ws';
+import type { WebSocket } from '@fastify/websocket';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -16,15 +16,14 @@ import { requireAuth } from '../middleware/auth';
 
 const TIPOS_ALERTA = ['policia','bloqueo','rumba','peligro','ruido','parche','lluvia','cerrado'] as const;
 
-// Clientes WebSocket conectados
+// Fastify WebSocket v10 entrega el socket directamente al handler.
 const clientes = new Set<WebSocket>();
 
 export async function alertaRoutes(app: FastifyInstance) {
 
   // ─── WebSocket /ws/alertas ─────────────────────────────────────────
   // El cliente se conecta aquí y recibe todas las actualizaciones en tiempo real
-  app.get('/ws/alertas', { websocket: true }, async (connection) => {
-    const ws = connection.socket;
+  app.get('/ws/alertas', { websocket: true }, async (ws) => {
     clientes.add(ws);
 
     // Al conectar, envía todas las alertas activas
@@ -43,7 +42,7 @@ export async function alertaRoutes(app: FastifyInstance) {
 
   redisSub.on('message', (_channel: string, message: string) => {
     for (const ws of clientes) {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) {
         ws.send(message);
       }
     }
@@ -56,13 +55,13 @@ export async function alertaRoutes(app: FastifyInstance) {
   }
 
   // ─── GET /api/alertas ──────────────────────────────────────────────
-  app.get('/', async (_req, reply) => {
+  app.get('/api/alertas', async (_req, reply) => {
     const alertas = await obtenerAlertasActivas();
     return reply.send(alertas);
   });
 
   // ─── POST /api/alertas ─────────────────────────────────────────────
-  app.post('/', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/api/alertas', { preHandler: requireAuth }, async (req, reply) => {
     const body = z.object({
       tipo: z.enum(TIPOS_ALERTA),
       lat:  z.number().min(-90).max(90),
@@ -91,9 +90,10 @@ export async function alertaRoutes(app: FastifyInstance) {
   });
 
   // ─── POST /api/alertas/:id/confirmar ──────────────────────────────
-  app.post('/:id/confirmar', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/api/alertas/:id/confirmar', { preHandler: requireAuth }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const alerta = await confirmarAlerta(id);
+    const { uid } = req.user as { uid: string };
+    const alerta = await confirmarAlerta(id, uid);
     if (!alerta) return reply.status(404).send({ error: 'Alerta no encontrada o expirada' });
 
     await broadcast({ tipo: 'alerta_actualizada', alerta });
@@ -101,8 +101,14 @@ export async function alertaRoutes(app: FastifyInstance) {
   });
 
   // ─── DELETE /api/alertas/:id ───────────────────────────────────────
-  app.delete('/:id', { preHandler: requireAuth }, async (req, reply) => {
+  app.delete('/api/alertas/:id', { preHandler: requireAuth }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const { uid } = req.user as { uid: string };
+    const alerta = (await obtenerAlertasActivas()).find((item) => item.id === id);
+    if (!alerta) return reply.status(404).send({ error: 'Alerta no encontrada o expirada' });
+    if (alerta.reportadoPor !== uid) {
+      return reply.status(403).send({ error: 'Solo quien creó la alerta puede eliminarla' });
+    }
     await eliminarAlerta(id);
     await broadcast({ tipo: 'alerta_eliminada', id });
     return reply.send({ ok: true });

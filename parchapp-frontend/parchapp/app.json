@@ -5,10 +5,8 @@
     "version": "1.0.0",
     "scheme": "parchapp",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#7F77DD"
     },
@@ -28,10 +26,6 @@
       ]
     ],
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#7F77DD"
-      },
       "package": "com.parchapp.app",
       "config": {
         "googleMaps": {

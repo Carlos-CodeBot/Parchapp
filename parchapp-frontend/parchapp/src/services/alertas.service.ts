@@ -1,83 +1,46 @@
-// src/services/alertas.service.ts
-// Usa Realtime Database (no Firestore) porque:
-// 1. Las alertas necesitan sincronización instantánea (<200ms)
-// 2. Se pueden setear reglas de expiración automática con Cloud Functions
-// 3. El costo por operación es menor para datos volátiles
-
-import { ref, push, onValue, off, remove, query, orderByChild, get } from 'firebase/database';
-import { rtdb } from '../config/firebase';
 import { Alerta, AlertaTipo } from '../types';
-import uuid from 'react-native-uuid';
-
-const DURACION_ALERTA_MS = 45 * 60 * 1000; // 45 minutos, como Waze
-
-// ─── Crear alerta ────────────────────────────────────────────────────
+import { alertaApi, conectarAlertasWS } from './api';
 
 export async function crearAlerta(
   tipo: AlertaTipo,
   lat: number,
   lng: number,
-  usuarioId: string
+  _usuarioId: string
 ): Promise<string> {
-  const ahora = Date.now();
-  const alerta: Omit<Alerta, 'id'> = {
-    tipo,
-    coordenadas: { lat, lng },
-    reportadoPor: usuarioId,
-    creadoEn: ahora,
-    expiraEn: ahora + DURACION_ALERTA_MS,
-    confirmaciones: 1,
-  };
-
-  const alertaRef = push(ref(rtdb, 'alertas'), alerta);
-  return alertaRef.key!;
+  const alerta = await alertaApi.crear(tipo, lat, lng);
+  return alerta.id;
 }
-
-// ─── Confirmar alerta (como el pulgar arriba en Waze) ────────────────
 
 export async function confirmarAlerta(alertaId: string) {
-  const { update } = await import('firebase/database');
-  const alertaRef = ref(rtdb, `alertas/${alertaId}`);
-  const snap = await get(alertaRef);
-  if (!snap.exists()) return;
-
-  const alerta = snap.val() as Omit<Alerta, 'id'>;
-  await update(alertaRef, {
-    confirmaciones: alerta.confirmaciones + 1,
-    // Cada confirmación extiende la vida 5 minutos (máximo 2h)
-    expiraEn: Math.min(
-      alerta.expiraEn + 5 * 60 * 1000,
-      alerta.creadoEn + 2 * 60 * 60 * 1000
-    ),
-  });
+  await alertaApi.confirmar(alertaId);
 }
-
-// ─── Escuchar alertas activas ─────────────────────────────────────────
 
 export function suscribirAlertas(onData: (alertas: Alerta[]) => void) {
-  const alertasRef = ref(rtdb, 'alertas');
+  let alertas: Alerta[] = [];
+  let activo = true;
+  const publicar = () => onData(alertas.filter((a) => a.expiraEn > Date.now()));
 
-  const unsubscribe = onValue(alertasRef, (snap) => {
-    const ahora = Date.now();
-    const alertas: Alerta[] = [];
+  void alertaApi.listar().then((data) => {
+    if (activo) { alertas = data; publicar(); }
+  }).catch((error) => console.warn('No se pudieron cargar las alertas:', error));
 
-    snap.forEach((child) => {
-      const data = child.val() as Omit<Alerta, 'id'>;
-      // Filtra las expiradas localmente (la limpieza real la hace una Cloud Function)
-      if (data.expiraEn > ahora) {
-        alertas.push({ id: child.key!, ...data });
-      }
-    });
-
-    onData(alertas);
+  const desconectar = conectarAlertasWS((evento) => {
+    if (!activo) return;
+    if (evento.tipo === 'estado_inicial' && evento.alertas) alertas = evento.alertas;
+    if (evento.tipo === 'alerta_nueva' && evento.alerta) alertas = [...alertas, evento.alerta];
+    if (evento.tipo === 'alerta_actualizada' && evento.alerta) {
+      alertas = alertas.map((a) => a.id === evento.alerta.id ? evento.alerta : a);
+    }
+    if (evento.tipo === 'alerta_eliminada' && evento.id) {
+      alertas = alertas.filter((a) => a.id !== evento.id);
+    }
+    publicar();
   });
 
-  // Retorna función de limpieza
-  return () => off(alertasRef, 'value', unsubscribe as any);
+  const limpiar = setInterval(publicar, 30000);
+  return () => { activo = false; clearInterval(limpiar); desconectar(); };
 }
 
-// ─── Eliminar alerta (el que la creó puede borrarla) ─────────────────
-
 export async function eliminarAlerta(alertaId: string) {
-  await remove(ref(rtdb, `alertas/${alertaId}`));
+  await alertaApi.eliminar(alertaId);
 }
